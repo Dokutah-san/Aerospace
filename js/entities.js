@@ -161,6 +161,43 @@ class InterceptorAircraft extends Aircraft {
     }
 }
 
+// 3. Friendly Support Aircraft (Wingman)
+class FriendlyAircraft extends Aircraft {
+    constructor(lat, lng, specKey, homeBaseName) {
+        super(lat, lng, specKey, `WINGMAN (${AIRCRAFT_DATABASE[specKey].name})`);
+        this.homeBase = homeBaseName;
+        // Wingman lebih lambat dari interceptor agar terlihat formasi
+        this.speedFactor = (this.spec.maxSpeedKmh / 2120) * 0.006;
+        this.offsetIndex = 0; // Untuk formasi posisi
+    }
+
+    // Mengikuti player dengan formasi
+    followPlayer(player, index = 0) {
+        if (!player || player.destroyed) return;
+        
+        const dLat = player.lat - this.lat;
+        const dLng = player.lng - this.lng;
+        const distance = Math.hypot(dLat, dLng);
+        
+        // Jarak ideal formasi: sedikit di belakang dan samping player
+        const formationDist = 0.02; // ~2km formasi
+        const angleOffset = (index + 1) * 0.8; // Posisi formasi melingkar
+        
+        // Target posisi: di belakang player dengan offset formasi
+        const targetLat = player.lat - (formationDist * Math.cos(angleOffset));
+        const targetLng = player.lng - (formationDist * Math.sin(angleOffset));
+        
+        const toTargetLat = targetLat - this.lat;
+        const toTargetLng = targetLng - this.lng;
+        const distToFormation = Math.hypot(toTargetLat, toTargetLng);
+        
+        if (distToFormation > 0.003) { // Threshold formasi
+            this.lat += (toTargetLat / distToFormation) * this.speedFactor;
+            this.lng += (toTargetLng / distToFormation) * this.speedFactor;
+        }
+    }
+}
+
 class Projectile {
     constructor(owner, target, isTracking = true) {
         this.id = `proj-${Projectile._nextId++}`;

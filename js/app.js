@@ -8,6 +8,8 @@ class ApplicationEngine {
         this.homeCountry = null;
         this.interceptors = [];
         this.projectiles = [];
+        this.friendlyUnits = []; // Support wingman units
+        this.sharedLocks = []; // Network-Centric Warfare: shared target locks from all friendly units
         this.keysPressed = {};
         this.currentStatus = "PENDING";
         this.currentCountry = "NONE";
@@ -54,6 +56,9 @@ class ApplicationEngine {
 
         // Inisialisasi Canvas Radar Loop
         this.initCanvasOverlay();
+        
+        // Setelah setup, refresh panel support units
+        this.refreshSupportPanel();
     }
 
     initMap() {
@@ -182,9 +187,26 @@ class ApplicationEngine {
         return source.lockProgressMs >= source.lockDurationMs;
     }
 
+    isAWACS(aircraft) {
+        return aircraft && aircraft.spec && aircraft.spec.role === 'awacs';
+    }
+
     fireProjectile(owner, target, manual = false) {
         if (!owner || !target || owner.destroyed || target.destroyed) return false;
-        if (!owner.isTargetInRadar(target)) return false;
+        
+        // AWACS tidak bisa menembak
+        if (this.isAWACS(owner)) {
+            const radioLog = document.getElementById('radio-log');
+            if (radioLog && manual) radioLog.innerHTML = `[RADIO]: AWACS has no weapon systems. Use fighter units to engage.`;
+            return false;
+        }
+        
+        // Network-Centric Warfare: cek apakah target ada di sharedLocks
+        // Jika owner tidak bisa radar target sendiri, tapi target ada di sharedLocks, tetap bisa fire
+        const canSeeTarget = owner.isTargetInRadar(target);
+        const isSharedLocked = this.sharedLocks.some(lock => lock.targetId === target.id);
+        
+        if (!canSeeTarget && !isSharedLocked) return false;
 
         const now = performance.now();
         if (now - owner.lastFireAt < owner.fireCooldownMs) {
@@ -197,9 +219,10 @@ class ApplicationEngine {
 
         const radioLog = document.getElementById('radio-log');
         if (radioLog) {
+            const sourceInfo = canSeeTarget ? '' : ' [via datalink]';
             radioLog.innerHTML = manual
-                ? `[FIRE]: ${owner.name} fired at ${target.name}.`
-                : `[AUTO]: ${owner.name} launched shot at ${target.name}.`;
+                ? `[FIRE]: ${owner.name} fired at ${target.name}${sourceInfo}.`
+                : `[AUTO]: ${owner.name} launched shot at ${target.name}${sourceInfo}.`;
         }
 
         return true;
@@ -207,6 +230,13 @@ class ApplicationEngine {
 
     tryFirePlayerWeapon() {
         if (!this.player || this.gameOver || this.player.destroyed) return;
+
+        // AWACS tidak bisa menembak
+        if (this.isAWACS(this.player)) {
+            const radioLog = document.getElementById('radio-log');
+            if (radioLog) radioLog.innerHTML = `[RADIO]: AWACS has no weapon systems. Deploy fighter units from support panel to engage.`;
+            return;
+        }
 
         const target = this.activeTarget || this.selectTarget(this.player);
         const radioLog = document.getElementById('radio-log');
@@ -232,6 +262,12 @@ class ApplicationEngine {
         if (this.player) this.player.updateCountermeasures();
         this.interceptors.forEach(interceptor => interceptor.updateCountermeasures());
 
+        // Bersihkan sharedLocks yang targetnya sudah hancur
+        this.sharedLocks = this.sharedLocks.filter(lock => {
+            const target = this.findEntityById(lock.targetId);
+            return target && !target.destroyed;
+        });
+
         // ===== PLAYER: Hanya lock jika lockRequested = true (tombol L) =====
         if (this.lockRequested) {
             // Cari target yang masih live
@@ -247,6 +283,10 @@ class ApplicationEngine {
                     // Cek apakah lock baru selesai (progress tepat mencapai 100%)
                     if (this.activeTarget.hasBeenLockedBy !== this.player.id) {
                         this.activeTarget.hasBeenLockedBy = this.player.id;
+                        
+                        // Network-Centric Warfare: share lock ke semua friendly units
+                        this.shareLock(this.player, this.activeTarget);
+                        
                         const radioLog = document.getElementById('radio-log');
                         if (radioLog) radioLog.innerHTML = `[RADAR]: Target LOCKED - ${this.activeTarget.name} | LMB to fire.`;
                     }
@@ -276,6 +316,63 @@ class ApplicationEngine {
                 interceptor.resetLock();
             }
         });
+        
+        // ===== FRIENDLY UNITS: Auto-fire pada target yang ada di sharedLocks =====
+        this.friendlyUnits = this.friendlyUnits.filter(unit => unit && !unit.destroyed);
+        this.friendlyUnits.forEach(unit => {
+            // Cari target di sharedLocks yang belum di-fire oleh unit ini
+            const lockInfo = this.sharedLocks.find(lock => 
+                lock.targetId && !lock.firedBy.includes(unit.id)
+            );
+            
+            if (lockInfo) {
+                const target = this.findEntityById(lockInfo.targetId);
+                if (target && !target.destroyed) {
+                    // Friendly unit bisa fire ke target yang di-share lock
+                    // Cek cooldown
+                    if (nowMs - unit.lastFireAt >= unit.fireCooldownMs) {
+                        const success = this.fireProjectile(unit, target, false);
+                        if (success) {
+                            lockInfo.firedBy.push(unit.id);
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    findEntityById(id) {
+        if (!id) return null;
+        if (this.player && this.player.id === id) return this.player;
+        const interceptor = this.interceptors.find(i => i.id === id);
+        if (interceptor) return interceptor;
+        const friendly = this.friendlyUnits.find(f => f.id === id);
+        if (friendly) return friendly;
+        return null;
+    }
+    
+    shareLock(source, target) {
+        if (!source || !target) return;
+        
+        // Hapus lock lama untuk target yang sama
+        this.sharedLocks = this.sharedLocks.filter(lock => lock.targetId !== target.id);
+        
+        // Tambah lock baru
+        this.sharedLocks.push({
+            sourceId: source.id,
+            sourceName: source.name,
+            targetId: target.id,
+            targetName: target.name,
+            firedBy: [], // Unit yang sudah fire ke target ini
+            timestamp: performance.now()
+        });
+        
+        const radioLog = document.getElementById('radio-log');
+        if (radioLog) {
+            const isAWACS = this.isAWACS(source);
+            const awacsLabel = isAWACS ? ' [AWACS datalink]' : ' [datalink]';
+            radioLog.innerHTML = `[NCW]: ${source.name} shared target lock${awacsLabel}. All units can engage.`;
+        }
     }
 
     updateProjectiles(deltaMs) {
@@ -313,11 +410,17 @@ class ApplicationEngine {
         }
 
         if (target === this.player) {
+            // Set state menunggu deploy — player harus klik marker base di peta
+            this.waitingForRespawn = true;
             this.gameOver = true;
+            
             const hudCard = document.getElementById('status-card');
             if (hudCard) {
                 hudCard.className = "hud-card status-red";
-                hudCard.innerHTML = `<strong>MISSION FAILED</strong><br>Pesawat utama terkena tembakan.<br>Status: KIA`;
+                hudCard.innerHTML = `<strong>AIRCRAFT SHOT DOWN</strong><br>Klik marker pangkalan di peta untuk deploy ulang.`;
+            }
+            if (radioLog) {
+                radioLog.innerHTML = `[RADIO]: Mayday! Aircraft down! Click any airbase marker on map to redeploy.`;
             }
             return;
         }
@@ -331,6 +434,159 @@ class ApplicationEngine {
         }
     }
 
+    getAvailableSupportUnits() {
+        if (!this.homeCountry) return [];
+        
+        // Ambil semua base dari negara player
+        const bases = AIRBASE_DATABASE.filter(b => b.country === this.homeCountry);
+        const unitMap = new Map();
+        
+        bases.forEach(base => {
+            const aircraftKey = base.homeAircraftKey || (base.squadron && base.squadron[0]);
+            if (!aircraftKey) return;
+            
+            if (!unitMap.has(aircraftKey)) {
+                const spec = AIRCRAFT_DATABASE[aircraftKey];
+                unitMap.set(aircraftKey, {
+                    key: aircraftKey,
+                    name: spec ? spec.name : aircraftKey,
+                    count: 0,
+                    bases: []
+                });
+            }
+            unitMap.get(aircraftKey).count++;
+            unitMap.get(aircraftKey).bases.push(base);
+        });
+        
+        return Array.from(unitMap.values());
+    }
+    
+    refreshSupportPanel() {
+        const listContainer = document.getElementById('support-unit-list');
+        if (!listContainer) return;
+        
+        if (!this.homeCountry) {
+            listContainer.innerHTML = `<div style="color:#64748b;font-size:10px;">Select a country to see available units...</div>`;
+            return;
+        }
+        
+        const units = this.getAvailableSupportUnits();
+        
+        if (units.length === 0) {
+            listContainer.innerHTML = `<div style="color:#64748b;font-size:10px;">No support units available.</div>`;
+            return;
+        }
+        
+        listContainer.innerHTML = '';
+        units.forEach((unit, index) => {
+            const btn = document.createElement('button');
+            btn.className = 'support-unit-btn';
+            btn.innerHTML = `
+                <span>${unit.count > 1 ? '🛩️'.repeat(Math.min(unit.count, 3)) : '🛩️'} ${unit.name}</span>
+                <div class="unit-name">${unit.bases[0].name}${unit.bases.length > 1 ? ' +' + (unit.bases.length - 1) : ''}</div>
+            `;
+            btn.onclick = () => this.callSupport(unit.key);
+            listContainer.appendChild(btn);
+        });
+    }
+    
+    callSupport(aircraftKey) {
+        if (!this.player || this.player.destroyed || this.gameOver) return;
+        
+        // Cari base terdekat yang punya aircraft ini
+        const bases = AIRBASE_DATABASE.filter(b => 
+            b.country === this.homeCountry && 
+            (b.homeAircraftKey === aircraftKey || (b.squadron && b.squadron.includes(aircraftKey)))
+        );
+        
+        if (bases.length === 0) return;
+        
+        // Cari base terdekat dari posisi player
+        let nearestBase = null;
+        let nearestDist = Infinity;
+        
+        bases.forEach(base => {
+            const dist = turf.distance(
+                turf.point([this.player.lng, this.player.lat]),
+                turf.point([base.coords[1], base.coords[0]]),
+                { units: "kilometers" }
+            );
+            if (dist < nearestDist) {
+                nearestDist = dist;
+                nearestBase = base;
+            }
+        });
+        
+        if (!nearestBase) return;
+        
+        const wingman = new FriendlyAircraft(
+            nearestBase.coords[0],
+            nearestBase.coords[1],
+            aircraftKey,
+            nearestBase.name
+        );
+        
+        wingman.offsetIndex = this.friendlyUnits.length;
+        this.friendlyUnits.push(wingman);
+        
+        const radioLog = document.getElementById('radio-log');
+        if (radioLog) {
+            const spec = AIRCRAFT_DATABASE[aircraftKey];
+            radioLog.innerHTML = `[RADIO]: ${spec ? spec.name : aircraftKey} from ${nearestBase.name} en route to your position.`;
+        }
+        
+        this.refreshSupportPanel();
+    }
+    
+    respawnFromBase(baseId) {
+        // Cari base berdasarkan ID
+        const base = AIRBASE_DATABASE.find(b => b.id === baseId);
+        if (!base) return;
+        
+        // Cek apakah base ini dari negara yang sama dengan player
+        if (base.country !== this.homeCountry) {
+            const radioLog = document.getElementById('radio-log');
+            if (radioLog) radioLog.innerHTML = `[RADIO]: Cannot deploy at foreign base!`;
+            return;
+        }
+        
+        // Reset semua state
+        this.gameOver = false;
+        this.waitingForRespawn = false;
+        this.lockRequested = false;
+        this.activeTarget = null;
+        this.interceptors = [];
+        this.projectiles = [];
+        this.friendlyUnits = [];
+        
+        // Reset HUD
+        const hudCard = document.getElementById('status-card');
+        if (hudCard) {
+            hudCard.className = "hud-card status-green";
+        }
+        
+        const radioLog = document.getElementById('radio-log');
+        if (radioLog) {
+            radioLog.innerHTML = `[RADIO]: Redeploying at ${base.name}. All systems online.`;
+        }
+        
+        // Deploy ulang player di base yang dipilih
+        const defaultAircraft = base.homeAircraftKey || base.squadron[0];
+        const aircraftName = AIRCRAFT_DATABASE[defaultAircraft] 
+            ? AIRCRAFT_DATABASE[defaultAircraft].name 
+            : defaultAircraft;
+        
+        this.player = new PlayerAircraft(
+            base.coords[0],
+            base.coords[1],
+            defaultAircraft,
+            `${base.name} | ${aircraftName}`
+        );
+        
+        // Pindahkan kamera ke base
+        this.map.flyTo(base.coords, 7);
+    }
+
     updateGameLogic(deltaMs = 50, nowMs = performance.now()) {
         if (!this.player || this.gameOver) return;
 
@@ -342,6 +598,13 @@ class ApplicationEngine {
         const debugLog = document.getElementById('debug-log');
 
         this.interceptors.forEach(interceptor => interceptor.updateInterception(this.player));
+        
+        // Update friendly units mengikuti player
+        this.friendlyUnits = this.friendlyUnits.filter(unit => unit && !unit.destroyed);
+        this.friendlyUnits.forEach((unit, index) => {
+            unit.followPlayer(this.player, index);
+        });
+        
         this.updateCombatSystems(deltaMs, nowMs);
         this.updateProjectiles(deltaMs);
 
@@ -359,10 +622,29 @@ class ApplicationEngine {
                 ? Math.min(100, Math.round((this.player.lockProgressMs / this.player.lockDurationMs) * 100))
                 : 0;
             
+            // Network-Centric Warfare: cek apakah ada shared locks dari unit lain
+            const activeSharedLock = this.sharedLocks.find(lock => {
+                const tgt = this.findEntityById(lock.targetId);
+                return tgt && !tgt.destroyed;
+            });
+            const isPlayerAWACS = this.isAWACS(this.player);
+            const awacsLabel = isPlayerAWACS ? ' [AWACS - SUPPORT ONLY]' : '';
+            
             let combatLine;
-            if (this.lockRequested && this.activeTarget && !this.activeTarget.destroyed) {
+            if (isPlayerAWACS) {
+                // AWACS: tampilkan shared lock info
+                if (activeSharedLock) {
+                    const unitsFiring = activeSharedLock.firedBy.length;
+                    combatLine = `[AWACS] SHARED LOCK: ${activeSharedLock.targetName} | ${unitsFiring} unit(s) engaging`;
+                } else if (hasRadarContact) {
+                    combatLine = `[AWACS] RADAR: ${targetName} | Press L to lock & share with allies`;
+                } else {
+                    combatLine = `[AWACS] Scanning for targets... | Deploy fighters from support panel`;
+                }
+            } else if (this.lockRequested && this.activeTarget && !this.activeTarget.destroyed) {
                 if (this.player.lockProgressMs >= this.player.lockDurationMs) {
-                    combatLine = `[L] LOCKED ON ${targetName} | LMB TO FIRE`;
+                    const sharedInfo = activeSharedLock ? ' [SHARED via datalink]' : '';
+                    combatLine = `[L] LOCKED ON ${targetName}${sharedInfo} | LMB TO FIRE`;
                 } else {
                     combatLine = `[L] LOCKING ${targetName} [${lockPercent}%] | L to cancel`;
                 }
@@ -374,7 +656,7 @@ class ApplicationEngine {
 
             if (evaluation.status === "HOME_TERRITORIAL") {
                 hudCard.className = "hud-card status-green";
-                hudCard.innerHTML = `<strong>${this.homeCountry} - ${evaluation.zone.toUpperCase()}</strong><br>Legal status: ${evaluation.legalMeaning}<br>Status: FRIENDLY PATROL<br>${combatLine}`;
+                hudCard.innerHTML = `<strong>${this.homeCountry} - ${evaluation.zone.toUpperCase()}${awacsLabel}</strong><br>Legal status: ${evaluation.legalMeaning}<br>Status: FRIENDLY PATROL<br>${combatLine}`;
 
                 if (this.interceptors.length > 0) {
                     radioLog.innerHTML = `[RADIO]: Target returned to home jurisdiction. Interceptors disengaging.`;
@@ -382,7 +664,7 @@ class ApplicationEngine {
                 }
             } else if (evaluation.status === "FOREIGN_TERRITORIAL") {
                 hudCard.className = "hud-card status-red";
-                hudCard.innerHTML = `<strong>FOREIGN TERRITORIAL VIOLATION</strong><br>Country: ${evaluation.country}<br>Legal status: ${evaluation.legalMeaning}<br>Status: SCRAMBLE INTERCEPTOR<br>${combatLine}`;
+                hudCard.innerHTML = `<strong>FOREIGN TERRITORIAL VIOLATION${awacsLabel}</strong><br>Country: ${evaluation.country}<br>Legal status: ${evaluation.legalMeaning}<br>Status: SCRAMBLE INTERCEPTOR<br>${combatLine}`;
 
                 if (this.interceptors.length === 0) {
                     const nearestBase = this.spatial.getNearestAirbase(this.player.lat, this.player.lng, evaluation.country);
@@ -402,7 +684,7 @@ class ApplicationEngine {
                 }
             } else {
                 hudCard.className = "hud-card status-green";
-                hudCard.innerHTML = `<strong>INTERNATIONAL AIRSPACE</strong><br>Batas Hukum: freedom of navigation<br>Status: CLEAR<br>${combatLine}`;
+                hudCard.innerHTML = `<strong>INTERNATIONAL AIRSPACE${awacsLabel}</strong><br>Batas Hukum: freedom of navigation<br>Status: CLEAR<br>${combatLine}`;
 
                 if (this.interceptors.length > 0) {
                     radioLog.innerHTML = `[RADIO]: Target left foreign jurisdiction. Interceptors RTB.`;
@@ -419,11 +701,20 @@ class ApplicationEngine {
         // Update ammo display real-time
         const ammoDisplay = document.querySelector('.hud-panel > div:nth-child(2)');
         if (ammoDisplay) {
-            ammoDisplay.innerHTML = `
-                Kontrol: <span style="color: var(--text-cyan)">[W][A][S][D]</span> / Panah Keyboard<br>
-                <span style="color: #38bdf8;">🔫 TEMBAK: LMB (Left Mouse) | 🛡️ CHAFF/FLARE: Middle Mouse</span><br>
-                <span style="color: #fca5a5;">Chaff: ${this.player.chaffCount}x | Flare: ${this.player.flareCount}x | Cooldown: 0.3s</span>
-            `;
+            if (this.isAWACS(this.player)) {
+                ammoDisplay.innerHTML = `
+                    Kontrol: <span style="color: var(--text-cyan)">[W][A][S][D]</span> / Panah Keyboard<br>
+                    <span style="color: #a855f7;">🛩️ AWACS - SUPPORT PLATFORM</span><br>
+                    <span style="color: #c084fc;">Radar: ${this.player.spec.radarRangeKm}km | Lock & share targets with fighters</span><br>
+                    <span style="color: #fca5a5;">Chaff: ${this.player.chaffCount}x | Flare: ${this.player.flareCount}x</span>
+                `;
+            } else {
+                ammoDisplay.innerHTML = `
+                    Kontrol: <span style="color: var(--text-cyan)">[W][A][S][D]</span> / Panah Keyboard<br>
+                    <span style="color: #38bdf8;">🔫 TEMBAK: LMB (Left Mouse) | 🛡️ CHAFF/FLARE: Middle Mouse</span><br>
+                    <span style="color: #fca5a5;">Chaff: ${this.player.chaffCount}x | Flare: ${this.player.flareCount}x | Cooldown: 0.3s</span>
+                `;
+            }
         }
 
         if (debugLog) {
@@ -499,24 +790,30 @@ class ApplicationEngine {
                 ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
 
                 const sweepAngle = (this._step * 0.03) % (Math.PI * 2);
-                const allAircrafts = [self.player, ...self.interceptors].filter(ent => ent && !ent.destroyed);
+                const allAircrafts = [self.player, ...self.interceptors, ...self.friendlyUnits].filter(ent => ent && !ent.destroyed);
 
                 allAircrafts.forEach(ent => {
                     const pt = self.map.latLngToContainerPoint([ent.lat, ent.lng]);
                     const radiusPx = SpatialEngine.getRadiusInPixels(self.map, ent.lat, ent.spec.radarRangeKm);
 
+                    // Determine color based on entity type
+                    let displayColor = ent.spec.color;
+                    
+                    // Friendly units always show green
+                    const isFriendly = self.friendlyUnits.includes(ent);
+                    
                     ctx.save();
 
                     ctx.beginPath();
                     ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
-                    ctx.fillStyle = ent.spec.color;
-                    ctx.shadowColor = ent.spec.color;
+                    ctx.fillStyle = isFriendly ? '#22c55e' : displayColor;
+                    ctx.shadowColor = isFriendly ? '#22c55e' : displayColor;
                     ctx.shadowBlur = 10;
                     ctx.fill();
 
                     ctx.beginPath();
                     ctx.arc(pt.x, pt.y, radiusPx, 0, Math.PI * 2);
-                    ctx.strokeStyle = ent.spec.color;
+                    ctx.strokeStyle = isFriendly ? '#22c55e' : displayColor;
                     ctx.lineWidth = 1.2;
                     ctx.globalAlpha = 0.3;
                     ctx.stroke();
@@ -529,10 +826,10 @@ class ApplicationEngine {
                     if (typeof ctx.createConicGradient === 'function') {
                         let gradient = ctx.createConicGradient(sweepAngle, pt.x, pt.y);
                         gradient.addColorStop(0, 'transparent');
-                        gradient.addColorStop(1, ent.spec.color);
+                        gradient.addColorStop(1, isFriendly ? '#22c55e' : displayColor);
                         ctx.fillStyle = gradient;
                     } else {
-                        ctx.fillStyle = ent.spec.color;
+                        ctx.fillStyle = isFriendly ? '#22c55e' : displayColor;
                     }
                     ctx.globalAlpha = 0.18;
                     ctx.fill();
@@ -540,7 +837,8 @@ class ApplicationEngine {
                     ctx.globalAlpha = 0.9;
                     ctx.font = '11px monospace';
                     ctx.fillStyle = '#ffffff';
-                    ctx.fillText(`${ent.name} [RADAR: ${ent.spec.radarRangeKm}km]`, pt.x + 12, pt.y + 4);
+                    const labelPrefix = isFriendly ? '🟢 ' : '';
+                    ctx.fillText(`${labelPrefix}${ent.name} [RADAR: ${ent.spec.radarRangeKm}km]`, pt.x + 12, pt.y + 4);
 
                     ctx.restore();
                 });

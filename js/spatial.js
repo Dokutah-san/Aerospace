@@ -448,8 +448,12 @@ class SpatialEngine {
                 fillOpacity: 0.8
             });
 
+            // Fungsi deploy dari popup (dipanggil via global app)
+            const deployFn = `window.app && window.app.respawnFromBase('${base.id}')`;
+            
             marker.bindPopup(
-                `<strong>${base.name}</strong><br>${base.city}<br>${base.country}<br>Primary asset: ${aircraftName}`
+                `<strong>${base.name}</strong><br>${base.city}<br>${base.country}<br>Primary asset: ${aircraftName}<br><br>` +
+                `<button onclick="${deployFn}" style="background:#00ffcc;color:#000;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-weight:bold;font-family:monospace;">🚀 DEPLOY</button>`
             );
             marker.bindTooltip(`${base.country}: ${base.name}`, { sticky: true });
             marker.addTo(this.airbaseLayerGroup);

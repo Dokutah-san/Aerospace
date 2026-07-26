@@ -89,6 +89,64 @@ body, html {
     white-space: pre-wrap;
 }
 
+/* Support Units Panel (Kiri Bawah) */
+.support-panel {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 1000;
+    width: 240px;
+    background: var(--hud-bg);
+    border: 1px solid var(--border-cyan);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--text-white);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+}
+
+.support-title {
+    color: var(--text-cyan);
+    font-weight: bold;
+    font-size: 12px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-cyan);
+    padding-bottom: 4px;
+}
+
+.support-unit-btn {
+    display: block;
+    width: 100%;
+    background: #131b2e;
+    border: 1px solid rgba(0, 255, 204, 0.2);
+    color: #fff;
+    padding: 8px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    font-size: 11px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    margin-bottom: 4px;
+    transition: all 0.2s ease;
+}
+
+.support-unit-btn:hover {
+    background: rgba(0, 255, 204, 0.12);
+    border-color: var(--text-cyan);
+    transform: translateX(3px);
+}
+
+.support-unit-btn .unit-name {
+    color: #38bdf8;
+    font-size: 10px;
+}
+
+.support-unit-btn .unit-count {
+    float: right;
+    color: #22c55e;
+    font-size: 10px;
+}
+
 /* Modal Base Selection */
 .modal-overlay {
     position: fixed;
