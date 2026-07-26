@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UNCLOS Airspace Command</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="selection-modal" class="modal-overlay">
+    <div class="modal-box">
+        <h2>PILIH PANGKALAN UTAMA</h2>
+        <p>Tentukan negara asal unit udara sebelum memulai patroli zona UNCLOS.</p>
+
+        <div class="base-options">
+            <button class="base-btn" onclick="selectHomeBase('INDONESIA')">
+                <strong>INDONESIA</strong><br>
+                <span>Lanud Roesmin Nurjadin - F-16 Block 52ID</span>
+            </button>
+            <button class="base-btn" onclick="selectHomeBase('MALAYSIA')">
+                <strong>MALAYSIA</strong><br>
+                <span>RMAF Gong Kedak - Su-30MKM</span>
+            </button>
+            <button class="base-btn" onclick="selectHomeBase('SINGAPURA')">
+                <strong>SINGAPURA</strong><br>
+                <span>Tengah Air Base - F-15SG</span>
+            </button>
+            <button class="base-btn" onclick="selectHomeBase('THAILAND')">
+                <strong>THAILAND</strong><br>
+                <span>Korat Air Base - JAS 39C Gripen</span>
+            </button>
+            <button class="base-btn" onclick="selectHomeBase('FILIPINA')">
+                <strong>FILIPINA</strong><br>
+                <span>Basa Air Base - FA-50PH</span>
+            </button>
+            <button class="base-btn" onclick="selectHomeBase('VIETNAM')">
+                <strong>VIETNAM</strong><br>
+                <span>Da Nang Air Base - Su-30MK2</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="hud-panel">
+    <div class="hud-title">AWACS COMMAND CENTER</div>
+    <div>
+        Kontrol: <span style="color: var(--text-cyan)">[W][A][S][D]</span> / Panah Keyboard<br>
+        <span style="color: #38bdf8;">🔫 TEMBAK: LMB (Left Mouse) | 🛡️ CHAFF/FLARE: Middle Mouse</span><br>
+        <span style="color: #fca5a5;">Chaff: 12x | Flare: 12x | Cooldown: 0.3s</span>
+    </div>
+
+    <div id="status-card" class="hud-card status-green">
+        <strong>ZONA: INTERNATIONAL AIRSPACE</strong><br>
+        Batas Hukum: UNCLOS Free Transit<br>
+        Status Militer: CLEAR
+    </div>
+
+    <div class="radio-log" id="radio-log">
+        [RADIO]: All systems operational. Radar online.
+    </div>
+
+    <div class="radio-log debug-log" id="debug-log" style="display:none;"></div>
+</div>
+
+<div id="map"></div>
+
+<script src="js/data/aircrafts.js"></script>
+<script src="js/data/airbases.js"></script>
+<script src="js/data/boundaries/singapura-official.js"></script>
+<script src="js/data/boundaries/malaysia-official.js"></script>
+<script src="js/data/boundaries/asean-country-cache.js"></script>
+<script src="js/spatial.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

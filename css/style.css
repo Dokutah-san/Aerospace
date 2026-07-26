@@ -1,0 +1,161 @@
+:root {
+    --bg-dark: #070a12;
+    --hud-bg: rgba(11, 15, 25, 0.9);
+    --border-cyan: rgba(0, 255, 204, 0.4);
+    --text-cyan: #00ffcc;
+    --text-white: #f8fafc;
+}
+
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Consolas', 'Courier New', monospace;
+    background-color: var(--bg-dark);
+}
+
+#map {
+    width: 100vw;
+    height: 100vh;
+}
+
+/* Panel Kontrol AWACS Overlay */
+.hud-panel {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+    width: 320px;
+    background: var(--hud-bg);
+    border: 1px solid var(--border-cyan);
+    border-radius: 8px;
+    padding: 16px;
+    color: var(--text-white);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+}
+
+.hud-title {
+    color: var(--text-cyan);
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border-cyan);
+    padding-bottom: 4px;
+}
+
+.hud-card {
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-top: 10px;
+    line-height: 1.4;
+}
+
+/* Status Eskalasi UNCLOS */
+.status-green { background: rgba(34, 197, 94, 0.15); border: 1px solid #22c55e; color: #86efac; }
+.status-yellow { background: rgba(234, 179, 8, 0.15); border: 1px solid #eab308; color: #fef08a; }
+.status-red { 
+    background: rgba(239, 68, 68, 0.2); 
+    border: 1px solid #ef4444; 
+    color: #fca5a5;
+    animation: alert-blink 1s infinite alternate;
+}
+
+@keyframes alert-blink {
+    0% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.4); }
+    100% { box-shadow: 0 0 16px rgba(239, 68, 68, 0.9); }
+}
+
+.radio-log {
+    margin-top: 10px;
+    background: #020617;
+    border-left: 3px solid var(--text-cyan);
+    padding: 8px;
+    font-size: 11px;
+    color: #38bdf8;
+    height: 60px;
+    overflow-y: auto;
+}
+
+.debug-log {
+    border-left-color: #f97316;
+    color: #fdba74;
+    height: auto;
+    min-height: 80px;
+    max-height: 180px;
+    white-space: pre-wrap;
+}
+
+/* Modal Base Selection */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(4, 7, 15, 0.92);
+    backdrop-filter: blur(10px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-box {
+    background: #0b0f19;
+    border: 1px solid var(--border-cyan);
+    padding: 30px;
+    border-radius: 12px;
+    max-width: 480px;
+    max-height: 86vh;
+    overflow-y: auto;
+    text-align: center;
+    color: var(--text-white);
+    box-shadow: 0 0 40px rgba(0, 255, 204, 0.2);
+}
+
+.modal-box h2 {
+    color: var(--text-cyan);
+    font-size: 16px;
+    margin-bottom: 10px;
+}
+
+.modal-box p {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 20px;
+}
+
+.base-options {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 52vh;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.base-btn {
+    background: #131b2e;
+    border: 1px solid rgba(0, 255, 204, 0.3);
+    color: #fff;
+    padding: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+}
+
+.base-btn:hover {
+    background: rgba(0, 255, 204, 0.15);
+    border-color: var(--text-cyan);
+    transform: translateY(-2px);
+}
+
+.base-btn span {
+    font-size: 11px;
+    color: #38bdf8;
+}
